@@ -293,38 +293,38 @@ class Recorder(QObject):
 # ── global hotkey watcher ─────────────────────────────────────────────────────
 
 class HotkeyWatcher(QObject):
-    """Runs a pynput keyboard listener in a daemon thread, emits toggled()."""
-    toggled = pyqtSignal()
+    """Single persistent keyboard listener.
+
+    Handles both hotkey toggle detection and one-shot key capture.
+    Signals are emitted from the pynput thread but PyQt6 queues them
+    safely to the main thread via auto-connection.
+    """
+    toggled      = pyqtSignal()         # hotkey was pressed
+    key_captured = pyqtSignal(object)   # one-shot capture result
 
     def __init__(self):
         super().__init__()
-        self._key      = None
-        self._listener = None
-        self._enabled  = True
+        self._key       = None   # the configured hotkey (pynput key object)
+        self._listener  = None
+        self._capturing = False  # True while waiting for a one-shot capture
 
     def set_key(self, key):
         self._key = key
 
-    def set_enabled(self, enabled: bool):
-        self._enabled = enabled
+    def begin_capture(self):
+        """Next key press will be emitted via key_captured instead of checked as hotkey."""
+        self._capturing = True
 
     def start(self):
         def on_press(key):
-            if self._enabled and self._key is not None and key == self._key:
-                self.toggled.emit()
+            if self._capturing:
+                self._capturing = False
+                self.key_captured.emit(key)   # safe: Qt queues cross-thread signals
+                return
+            if self._key is not None and key == self._key:
+                self.toggled.emit()            # safe: same reason
         self._listener = _kb.Listener(on_press=on_press, daemon=True)
         self._listener.start()
-
-
-# ── one-shot key capture ──────────────────────────────────────────────────────
-
-def capture_one_key(callback):
-    """Start a temporary listener; first key press → callback(key), then stop."""
-    def on_press(key):
-        callback(key)
-        return False   # stops the listener
-    listener = _kb.Listener(on_press=on_press, daemon=True)
-    listener.start()
 
 
 # ── step editor dialog ────────────────────────────────────────────────────────
@@ -352,12 +352,14 @@ class StepDialog(QDialog):
         self.fields_layout = QFormLayout(self.fields_group)
         layout.addWidget(self.fields_group)
         self._fields: dict = {}
-        self.type_cb.currentIndexChanged.connect(self._rebuild)
-        self._rebuild()
 
+        # Must be created before _rebuild() because _rebuild calls setVisible on it
         self.capture_btn = QPushButton("📍  Use current mouse position")
         self.capture_btn.clicked.connect(self._capture_pos)
         layout.addWidget(self.capture_btn)
+
+        self.type_cb.currentIndexChanged.connect(self._rebuild)
+        self._rebuild()
 
         btns = QHBoxLayout()
         ok = QPushButton("OK"); ok.setDefault(True); ok.clicked.connect(self.accept)
@@ -447,6 +449,7 @@ class MacroTool(QMainWindow):
 
         self._recorder.recording_finished.connect(self._on_recording_done)
         self._watcher.toggled.connect(self._toggle_recording)
+        self._watcher.key_captured.connect(self._on_key_captured)
         self._watcher.start()
 
         self._build_ui()
@@ -580,21 +583,16 @@ class MacroTool(QMainWindow):
     # ── recording ─────────────────────────────────────────────────────────────
 
     def _set_hotkey(self):
-        self._watcher.set_enabled(False)
         self.hotkey_label.setText("<i>Press any key…</i>")
+        self._watcher.begin_capture()   # next key press → key_captured signal
 
-        def on_key_captured(key):
-            self._record_key = key
-            self._record_key_label = pynput_key_label(key)
-            self._watcher.set_key(key)
-            self._watcher.set_enabled(True)
-            # Update UI from main thread
-            QTimer.singleShot(0, lambda: self.hotkey_label.setText(
-                f"<b>{self._record_key_label}</b>"
-            ))
-            self._save_settings()
-
-        capture_one_key(on_key_captured)
+    def _on_key_captured(self, key):
+        """Slot — called in the main Qt thread when a key is captured."""
+        self._record_key = key
+        self._record_key_label = pynput_key_label(key)
+        self._watcher.set_key(key)
+        self.hotkey_label.setText(f"<b>{self._record_key_label}</b>")
+        self._save_settings()
 
     def _toggle_recording(self):
         if self._recorder.active:
