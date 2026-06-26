@@ -204,7 +204,7 @@ class Recorder(QObject):
             on_scroll=self._on_scroll,
             daemon=True,
         )
-        self._kl = _keyboard.Listener(
+        self._kl = _kb.Listener(
             on_press=self._on_key_press,
             daemon=True,
         )
