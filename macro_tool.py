@@ -488,9 +488,9 @@ class MacroTool(QMainWindow):
         self.macro_label = QLabel("<b>Steps</b>")
         rv.addWidget(self.macro_label)
         self.step_list = QListWidget()
-        self.step_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.step_list.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
+        self.step_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.step_list.doubleClicked.connect(self._edit_step)
-        self.step_list.model().rowsMoved.connect(self._on_steps_reordered)
         rv.addWidget(self.step_list, 1)
 
         sb = QHBoxLayout()
@@ -712,10 +712,11 @@ class MacroTool(QMainWindow):
     def _delete_step(self):
         macro = self._current_macro()
         if not macro: return
-        row = self.step_list.currentRow()
-        if row < 0: return
-        macro["steps"].pop(row)
-        self.step_list.takeItem(row)
+        rows = sorted({idx.row() for idx in self.step_list.selectedIndexes()}, reverse=True)
+        if not rows: return
+        for row in rows:
+            macro["steps"].pop(row)
+            self.step_list.takeItem(row)
         self._save()
 
     def _duplicate_step(self):
