@@ -1,6 +1,6 @@
 # MacroTool
 
-I made this to send emails automatically because all recorders are paid or bad.
+I made this to send emails automatically and afk on roblox because all macro recorders are paid or bad.
 
 Build sequences of mouse and keyboard actions, save them, and replay them on demand.
 
@@ -24,6 +24,9 @@ Python 3.10+
 
 ## Run
 
+cd into the folder you downloaded this to
+
 ```
 python macro_tool.py
 ```
+if you dont know how run this ask gpt
